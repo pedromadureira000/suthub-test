@@ -1,0 +1,7 @@
+# AWS SDK for Python, typically included in Lambda runtime but good for local testing
+boto3
+
+# Testing frameworks
+pytest
+pytest-mock
+moto[all]

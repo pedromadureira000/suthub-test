@@ -1,0 +1,169 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  serverless-enrollment-poc
+
+  A minimalist Proof of Concept for a serverless enrollment system.
+
+Globals:
+  Function:
+    Timeout: 10
+    MemorySize: 128
+    Runtime: python3.9
+    Environment:
+      Variables:
+        AGE_GROUPS_TABLE: !Ref AgeGroupsTable
+        ENROLLMENTS_TABLE: !Ref EnrollmentsTable
+        ENROLLMENT_QUEUE_URL: !Ref EnrollmentQueue
+
+Resources:
+  # API Gateway HTTP API
+  EnrollmentsApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Auth:
+        ApiKeyRequired: true
+        DefaultAuthorizer: AWS_IAM # This is a placeholder, actual API key auth is managed by Usage Plan
+      UsagePlan:
+        CreateUsagePlan: PER_API
+        UsagePlanName: EnrollmentSystemUsagePlan
+        Description: Usage plan for the Enrollment System API
+
+  # DynamoDB Tables
+  AgeGroupsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  EnrollmentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  # SQS Queue
+  EnrollmentQueue:
+    Type: AWS::SQS::Queue
+
+  # --- Lambda Functions ---
+
+  # Age Group Functions
+  CreateAgeGroupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/age_groups/
+      Handler: app.create_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AgeGroupsTable
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /age-groups
+            Method: POST
+            ApiId: !Ref EnrollmentsApi
+
+  ListAgeGroupsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/age_groups/
+      Handler: app.list_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref AgeGroupsTable
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /age-groups
+            Method: GET
+            ApiId: !Ref EnrollmentsApi
+
+  DeleteAgeGroupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/age_groups/
+      Handler: app.delete_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AgeGroupsTable
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /age-groups/{id}
+            Method: DELETE
+            ApiId: !Ref EnrollmentsApi
+
+  # Enrollment Functions
+  RequestEnrollmentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/enrollments/
+      Handler: app.request_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref AgeGroupsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EnrollmentsTable
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt EnrollmentQueue.QueueName
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /enrollments
+            Method: POST
+            ApiId: !Ref EnrollmentsApi
+
+  GetEnrollmentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/enrollments/
+      Handler: app.get_status_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EnrollmentsTable
+      Events:
+        ApiEvent:
+          Type: HttpApi
+          Properties:
+            Path: /enrollments/{id}
+            Method: GET
+            ApiId: !Ref EnrollmentsApi
+
+  # Processor Function
+  ProcessEnrollmentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/processor/
+      Handler: app.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EnrollmentsTable
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt EnrollmentQueue.Arn
+            BatchSize: 1
+
+Outputs:
+  ApiEndpoint:
+    Description: "API Gateway endpoint URL"
+    Value: !Sub "https://${EnrollmentsApi}.execute-api.${AWS::Region}.amazonaws.com"
+  ApiKey:
+    Description: "API Key for the Enrollment System API"
+    Value: !Ref EnrollmentsApiApiKey
