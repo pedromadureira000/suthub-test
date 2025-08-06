@@ -1,0 +1,19 @@
+version: "3.8"
+services:
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: dynamodb-local
+    ports:
+      - "8000:8000"
+    command: "-jar DynamoDBLocal.jar -sharedDb -dbPath /home/dynamodblocal/data"
+    volumes:
+      - ./docker/dynamodb:/home/dynamodblocal/data # Persists data on your host machine
+
+  elasticmq:
+    image: softwaremill/elasticmq-native:latest
+    container_name: elasticmq-local
+    ports:
+      - "9324:9324" # SQS port
+      - "9325:9325" # Admin UI port
+    volumes:
+      - ./docker/elasticmq/custom.conf:/opt/elasticmq.conf # Custom config

@@ -11,11 +11,16 @@ age_groups_table = dynamodb.Table(os.environ['AGE_GROUPS_TABLE'])
 enrollments_table = dynamodb.Table(os.environ['ENROLLMENTS_TABLE'])
 queue_url = os.environ['ENROLLMENT_QUEUE_URL']
 
+# FIX: In-memory cache for age groups to avoid repeated table scans.
+# This cache will persist for the lifetime of the Lambda container.
+_age_groups_cache = None
+
 def request_handler(event, context):
     """
     Requests a new enrollment.
     Input: {"name": "John Doe", "age": 22, "cpf": "12345678900"}
     """
+    global _age_groups_cache
     try:
         body = json.loads(event.get('body', '{}'))
         name = body.get('name')
@@ -25,10 +30,14 @@ def request_handler(event, context):
         if not all([name, isinstance(age, int), cpf]):
             return {'statusCode': 400, 'body': json.dumps({'error': 'Missing required fields: name, age, cpf'})}
 
-        # Validate age against registered age groups
-        response = age_groups_table.scan()
-        age_groups = response.get('Items', [])
-        is_valid_age = any(int(group['min_age']) <= age <= int(group['max_age']) for group in age_groups)
+        # FIX: Use a cache to validate age against registered age groups.
+        # This avoids a costly and slow table.scan() on every invocation.
+        if _age_groups_cache is None:
+            print("Age groups cache is empty. Fetching from DynamoDB.")
+            response = age_groups_table.scan()
+            _age_groups_cache = response.get('Items', [])
+        
+        is_valid_age = any(int(group['min_age']) <= age <= int(group['max_age']) for group in _age_groups_cache)
 
         if not is_valid_age:
             return {'statusCode': 400, 'body': json.dumps({'error': 'User age does not fit into any available age group.'})}
@@ -85,4 +94,3 @@ def get_status_handler(event, context):
         }
     except ClientError as e:
         return {'statusCode': 500, 'body': json.dumps({'error': str(e)})}
-

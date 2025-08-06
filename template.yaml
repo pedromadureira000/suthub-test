@@ -17,17 +17,17 @@ Globals:
         ENROLLMENT_QUEUE_URL: !Ref EnrollmentQueue
 
 Resources:
-  # API Gateway HTTP API
+  # API Gateway REST API
   EnrollmentsApi:
-    Type: AWS::Serverless::HttpApi
+    Type: AWS::Serverless::Api # FIX: Changed from HttpApi to Api to support ApiKeyRequired
     Properties:
+      StageName: Prod # FIX: Added StageName, which is standard for REST APIs
+      # FIX: Add the Auth property here to instruct SAM to create an API Key and Usage Plan.
+      # This makes the logical ID 'EnrollmentsApiApiKey' available for the Outputs section.
       Auth:
         ApiKeyRequired: true
-        DefaultAuthorizer: AWS_IAM # This is a placeholder, actual API key auth is managed by Usage Plan
-      UsagePlan:
-        CreateUsagePlan: PER_API
-        UsagePlanName: EnrollmentSystemUsagePlan
-        Description: Usage plan for the Enrollment System API
+        UsagePlan:
+          CreateUsagePlan: PER_API # Creates a single usage plan for the entire API
 
   # DynamoDB Tables
   AgeGroupsTable:
@@ -69,11 +69,13 @@ Resources:
             TableName: !Ref AgeGroupsTable
       Events:
         ApiEvent:
-          Type: HttpApi
+          Type: Api # FIX: Changed from HttpApi
           Properties:
             Path: /age-groups
-            Method: POST
-            ApiId: !Ref EnrollmentsApi
+            Method: post # FIX: Changed to lowercase for convention, POST is also valid
+            RestApiId: !Ref EnrollmentsApi # FIX: Changed from ApiId
+            Auth:
+              ApiKeyRequired: true # This is now valid
 
   ListAgeGroupsFunction:
     Type: AWS::Serverless::Function
@@ -85,11 +87,13 @@ Resources:
             TableName: !Ref AgeGroupsTable
       Events:
         ApiEvent:
-          Type: HttpApi
+          Type: Api # FIX: Changed from HttpApi
           Properties:
             Path: /age-groups
-            Method: GET
-            ApiId: !Ref EnrollmentsApi
+            Method: get # FIX: Changed to lowercase for convention, GET is also valid
+            RestApiId: !Ref EnrollmentsApi # FIX: Changed from ApiId
+            Auth:
+              ApiKeyRequired: true
 
   DeleteAgeGroupFunction:
     Type: AWS::Serverless::Function
@@ -101,11 +105,13 @@ Resources:
             TableName: !Ref AgeGroupsTable
       Events:
         ApiEvent:
-          Type: HttpApi
+          Type: Api # FIX: Changed from HttpApi
           Properties:
             Path: /age-groups/{id}
-            Method: DELETE
-            ApiId: !Ref EnrollmentsApi
+            Method: delete # FIX: Changed to lowercase for convention, DELETE is also valid
+            RestApiId: !Ref EnrollmentsApi # FIX: Changed from ApiId
+            Auth:
+              ApiKeyRequired: true
 
   # Enrollment Functions
   RequestEnrollmentFunction:
@@ -122,11 +128,13 @@ Resources:
             QueueName: !GetAtt EnrollmentQueue.QueueName
       Events:
         ApiEvent:
-          Type: HttpApi
+          Type: Api # FIX: Changed from HttpApi
           Properties:
             Path: /enrollments
-            Method: POST
-            ApiId: !Ref EnrollmentsApi
+            Method: post # FIX: Changed to lowercase for convention, POST is also valid
+            RestApiId: !Ref EnrollmentsApi # FIX: Changed from ApiId
+            Auth:
+              ApiKeyRequired: true
 
   GetEnrollmentFunction:
     Type: AWS::Serverless::Function
@@ -138,11 +146,13 @@ Resources:
             TableName: !Ref EnrollmentsTable
       Events:
         ApiEvent:
-          Type: HttpApi
+          Type: Api # FIX: Changed from HttpApi
           Properties:
             Path: /enrollments/{id}
-            Method: GET
-            ApiId: !Ref EnrollmentsApi
+            Method: get # FIX: Changed to lowercase for convention, GET is also valid
+            RestApiId: !Ref EnrollmentsApi # FIX: Changed from ApiId
+            Auth:
+              ApiKeyRequired: true
 
   # Processor Function
   ProcessEnrollmentFunction:
@@ -163,7 +173,11 @@ Resources:
 Outputs:
   ApiEndpoint:
     Description: "API Gateway endpoint URL"
-    Value: !Sub "https://${EnrollmentsApi}.execute-api.${AWS::Region}.amazonaws.com"
+    # FIX: Updated the URL format for a REST API to include the stage name
+    Value: !Sub "https://${EnrollmentsApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
   ApiKey:
     Description: "API Key for the Enrollment System API"
+    # This reference is now valid because we are using AWS::Serverless::Api
+    # with ApiKeyRequired set to true. SAM implicitly creates a key with the
+    # logical ID {ApiLogicalId}ApiKey.
     Value: !Ref EnrollmentsApiApiKey

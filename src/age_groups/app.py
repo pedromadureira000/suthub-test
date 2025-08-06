@@ -68,14 +68,19 @@ def delete_handler(event, context):
         if not group_id:
             return {'statusCode': 400, 'body': json.dumps({'error': 'ID is required'})}
 
-        table.delete_item(Key={'id': group_id})
+        # FIX: Add a ConditionExpression to ensure the item exists before deleting.
+        # This will raise 'ConditionalCheckFailedException' if the item is not found.
+        table.delete_item(
+            Key={'id': group_id},
+            ConditionExpression='attribute_exists(id)'
+        )
 
         return {
             'statusCode': 200,
             'body': json.dumps({'message': f'Age group {group_id} deleted successfully'})
         }
     except ClientError as e:
+        # FIX: This block now correctly handles the 404 case because of the ConditionExpression.
         if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
             return {'statusCode': 404, 'body': json.dumps({'error': 'Item not found'})}
         return {'statusCode': 500, 'body': json.dumps({'error': str(e)})}
-

@@ -106,8 +106,9 @@ def test_delete_handler_not_found(age_groups_table):
     event = {
         'pathParameters': {'id': 'non-existent-id'}
     }
-    # DynamoDB's delete_item is idempotent and doesn't fail if the item
-    # doesn't exist (unless a ConditionExpression is used).
-    # The app code reflects this by returning 200.
+    # The application code has been updated to use a ConditionExpression,
+    # which causes a ClientError ('ConditionalCheckFailedException') when the
+    # item doesn't exist. The handler correctly catches this and returns 404.
     response = age_groups_app.delete_handler(event, None)
-    assert response['statusCode'] == 200
+    assert response['statusCode'] == 404
+    assert 'Item not found' in json.loads(response['body'])['error']
