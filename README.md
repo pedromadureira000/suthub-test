@@ -51,11 +51,13 @@ The system uses API Gateway for REST endpoints, Lambda for compute, SQS for asyn
 ## Running Tests
 1.  **Install dependencies:**
     ```bash
+    python -m venv .venv
+    source .venv/bin/activate
     pip install -r requirements.txt
     ```
 2.  **Run the tests:**
     ```bash
-    pytest
+    pytest -v
     ```
 
 ## API Usage
