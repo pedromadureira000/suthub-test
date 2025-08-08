@@ -57,6 +57,10 @@ def test_lambda_handler_success(mock_sleep, dynamodb_table):
     response = processor_app.lambda_handler(sqs_event, None)
     assert response['statusCode'] == 200
 
+    response_body = json.loads(response['body'])
+    assert response_body['itemsSuccessfullyProcessed'] == [{'enrollment_id': enrollment_id}]
+    assert not response_body['batchItemFailures']
+
     # Verify status was updated in DynamoDB
     item = dynamodb_table.get_item(Key={'id': enrollment_id})['Item']
     assert item['status'] == 'PROCESSED'
@@ -66,10 +70,11 @@ def test_lambda_handler_success(mock_sleep, dynamodb_table):
 def test_lambda_handler_item_not_found(mock_sleep, dynamodb_table, capsys):
     """Test processing a message for a non-existent enrollment item."""
     enrollment_id = 'non-existent-id'
+    message_id = 'msg2'
     sqs_event = {
         'Records': [
             {
-                'messageId': 'msg2',
+                'messageId': message_id,
                 'body': json.dumps({'enrollment_id': enrollment_id})
             }
         ]
@@ -78,6 +83,10 @@ def test_lambda_handler_item_not_found(mock_sleep, dynamodb_table, capsys):
     response = processor_app.lambda_handler(sqs_event, None)
     assert response['statusCode'] == 200
 
+    response_body = json.loads(response['body'])
+    assert response_body['batchItemFailures'] == [{'itemIdentifier': message_id}]
+    assert not response_body['itemsSuccessfullyProcessed']
+
     # Capture stdout to verify error logging
     captured = capsys.readouterr()
     assert f"ERROR: Enrollment ID {enrollment_id} not found in table." in captured.out
@@ -85,32 +94,44 @@ def test_lambda_handler_item_not_found(mock_sleep, dynamodb_table, capsys):
 @patch('time.sleep', return_value=None)
 def test_lambda_handler_bad_message_format(mock_sleep, dynamodb_table, capsys):
     """Test processing a message with invalid JSON."""
+    message_id = 'msg3'
     sqs_event_bad_json = {
         'Records': [
             {
-                'messageId': 'msg3',
+                'messageId': message_id,
                 'body': 'this is not valid json'
             }
         ]
     }
     response = processor_app.lambda_handler(sqs_event_bad_json, None)
     assert response['statusCode'] == 200
+
+    response_body = json.loads(response['body'])
+    assert response_body['batchItemFailures'] == [{'itemIdentifier': message_id}]
+    assert not response_body['itemsSuccessfullyProcessed']
+
     captured = capsys.readouterr()
-    assert "ERROR: Could not decode message body for messageId msg3" in captured.out
+    assert f"ERROR: Could not decode message body for messageId {message_id}" in captured.out
 
 @patch('time.sleep', return_value=None)
 def test_lambda_handler_missing_enrollment_id(mock_sleep, dynamodb_table, capsys):
     """Test processing a message that is missing the 'enrollment_id' key."""
+    message_id = 'msg4'
     sqs_event_missing_key = {
         'Records': [
             {
-                'messageId': 'msg4',
+                'messageId': message_id,
                 'body': json.dumps({'some_other_key': 'some_value'})
             }
         ]
     }
     response = processor_app.lambda_handler(sqs_event_missing_key, None)
     assert response['statusCode'] == 200
+
+    response_body = json.loads(response['body'])
+    assert not response_body['batchItemFailures']
+    assert not response_body['itemsSuccessfullyProcessed']
+
     captured = capsys.readouterr()
     # The app code is designed to skip these messages
-    assert "Skipping message without enrollment_id: msg4" in captured.out
+    assert f"Skipping message without enrollment_id: {message_id}" in captured.out

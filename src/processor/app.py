@@ -25,13 +25,20 @@ def lambda_handler(event, context):
     # The event will be some changes in the field names when manually invoking the function when testing locally versus how the AWS Lambda service invokes it in production with the SQS trigger
     event_messages = event['Messages'] if AWS_SAM_LOCAL else event['Records']
     event_msg_body_key = 'Body' if AWS_SAM_LOCAL else 'body'
+    event_msg_id_key = 'MessageId' if AWS_SAM_LOCAL else 'messageId'
+
+    batch_item_failures = []
+    items_successfully_processed = []
+
     for record in event_messages:
         enrollment_id = None
+        message_id = record.get(event_msg_id_key)
         try:
             message_body = json.loads(record[event_msg_body_key])
             enrollment_id = message_body.get('enrollment_id')
 
             if not enrollment_id:
+                print(f"Skipping message without enrollment_id: {message_id}")
                 continue
 
             # Simulate a real-world workload
@@ -45,19 +52,26 @@ def lambda_handler(event, context):
                 ExpressionAttributeValues={':status': 'PROCESSED'},
                 ConditionExpression='attribute_exists(id)'
             )
-
+            items_successfully_processed.append({"enrollment_id": enrollment_id})
             print(f"▶️"*16, f"Successfully processed enrollment_id: {enrollment_id}")
         except json.JSONDecodeError as e:
-            print(f"▶️"*16, f"ERROR: Could not decode message body for MessageId {record.get('MessageId')}. Error: {e}")
+            print(f"▶️"*16, f"ERROR: Could not decode message body for messageId {message_id}. Error: {e}")
+            if message_id:
+                batch_item_failures.append({"itemIdentifier": message_id})
         except KeyError as e:
-            print(f"▶️"*16, f"ERROR: Missing key in message body for MessageId {record.get('MessageId')}. Error: {e}")
+            print(f"▶️"*16, f"ERROR: Missing key in message for messageId {message_id}. Error: {e}")
+            if message_id:
+                batch_item_failures.append({"itemIdentifier": message_id})
         except ClientError as e:
             if e.response['Error']['Code'] == 'ConditionalCheckFailedException':
                 print(f"▶️"*16, f"ERROR: Enrollment ID {enrollment_id} not found in table.")
             else:
-                print(f"▶️"*16, f"ERROR: Boto3 client error processing MessageId {record.get('MessageId')}. Error: {e}")
+                print(f"▶️"*16, f"ERROR: Boto3 client error processing messageId {message_id}. Error: {e}")
+            if message_id:
+                batch_item_failures.append({"itemIdentifier": message_id})
         except Exception as e:
-            print(f"▶️"*16, f"FATAL: An unexpected error occurred processing MessageId {record.get('MessageId')}. Error: {e}")
-            # Re-raise the exception to signal failure to SQS, so it can be retried or sent to a DLQ
-            raise e
-    return {'statusCode': 200, 'body': json.dumps('Processing complete')}
+            print(f"▶️"*16, f"FATAL: An unexpected error occurred processing messageId {message_id}. Error: {e}")
+            if message_id:
+                batch_item_failures.append({"itemIdentifier": message_id})
+
+    return {'statusCode': 200, 'body': json.dumps({"itemsSuccessfullyProcessed": items_successfully_processed, "batchItemFailures": batch_item_failures})}

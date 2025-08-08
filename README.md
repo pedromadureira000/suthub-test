@@ -57,6 +57,12 @@ sam local start-api --env-vars .local.env.json --profile local --docker-network 
 ```
 The API will be available at `http://127.0.0.1:3000`.
 
+### 5. Run Tests
+```bash
+pip install -r tests/requirements.txt
+pytest
+```
+
 ### 5. Test the Local API
 **1. Create an Age Group**
 ```bash
