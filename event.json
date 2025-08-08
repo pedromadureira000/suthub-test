@@ -1,0 +1,10 @@
+{
+    "Messages": [
+        {
+            "MessageId": "fef01925-efdb-414d-a088-05477ba307ff",
+            "ReceiptHandle": "fef01925-efdb-414d-a088-05477ba307ff#0b9ee7d8-ba8d-4624-b5ff-d384c7708502",
+            "MD5OfBody": "45a8c3998ee79f173c01a1cb794380ab",
+            "Body": "{\"enrollment_id\": \"4eec8a27-3f45-4095-8a45-463c56cbc023\"}"
+        }
+    ]
+}

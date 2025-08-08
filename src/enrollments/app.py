@@ -4,15 +4,29 @@ import uuid
 import boto3
 from botocore.exceptions import ClientError
 
-dynamodb = boto3.resource('dynamodb')
-sqs = boto3.client('sqs')
+if os.environ.get("AWS_SAM_LOCAL"):
+    dynamodb = boto3.resource(
+        'dynamodb',
+        endpoint_url="http://dynamodb-local:8000",
+        region_name="us-east-1",
+        aws_access_key_id="dummy",
+        aws_secret_access_key="dummy"
+    )
+    sqs = boto3.client(
+        'sqs',
+        endpoint_url="http://elasticmq-local:9324",
+        region_name="us-east-1",
+        aws_access_key_id="dummy",
+        aws_secret_access_key="dummy"
+    )
+else:
+    dynamodb = boto3.resource('dynamodb')
+    sqs = boto3.client('sqs')
 
 age_groups_table = dynamodb.Table(os.environ['AGE_GROUPS_TABLE'])
 enrollments_table = dynamodb.Table(os.environ['ENROLLMENTS_TABLE'])
 queue_url = os.environ['ENROLLMENT_QUEUE_URL']
 
-# FIX: In-memory cache for age groups to avoid repeated table scans.
-# This cache will persist for the lifetime of the Lambda container.
 _age_groups_cache = None
 
 def request_handler(event, context):
@@ -30,8 +44,6 @@ def request_handler(event, context):
         if not all([name, isinstance(age, int), cpf]):
             return {'statusCode': 400, 'body': json.dumps({'error': 'Missing required fields: name, age, cpf'})}
 
-        # FIX: Use a cache to validate age against registered age groups.
-        # This avoids a costly and slow table.scan() on every invocation.
         if _age_groups_cache is None:
             print("Age groups cache is empty. Fetching from DynamoDB.")
             response = age_groups_table.scan()

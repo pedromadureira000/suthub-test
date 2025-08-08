@@ -3,11 +3,19 @@ Transform: AWS::Serverless-2016-10-31
 Description: >
   serverless-enrollment-poc
 
-  A minimalist Proof of Concept for a serverless enrollment system.
+Parameters:
+  BasicAuthUsername:
+    Type: String
+    Description: The username for Basic Authentication.
+    NoEcho: true
+  BasicAuthPassword:
+    Type: String
+    Description: The password for Basic Authentication.
+    NoEcho: true
 
 Globals:
   Function:
-    Timeout: 10
+    Timeout: 20
     MemorySize: 128
     Runtime: python3.9
     Environment:
@@ -17,17 +25,33 @@ Globals:
         ENROLLMENT_QUEUE_URL: !Ref EnrollmentQueue
 
 Resources:
+  BasicAuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/authorizer/
+      Handler: app.lambda_handler
+      Environment:
+        Variables:
+          # These values are passed in during 'sam deploy'
+          BASIC_AUTH_USERNAME: !Ref BasicAuthUsername
+          BASIC_AUTH_PASSWORD: !Ref BasicAuthPassword
+
   # API Gateway REST API
   EnrollmentsApi:
-    Type: AWS::Serverless::Api # FIX: Changed from HttpApi to Api to support ApiKeyRequired
+    Type: AWS::Serverless::Api
     Properties:
-      StageName: Prod # FIX: Added StageName, which is standard for REST APIs
-      # FIX: Add the Auth property here to instruct SAM to create an API Key and Usage Plan.
-      # This makes the logical ID 'EnrollmentsApiApiKey' available for the Outputs section.
+      StageName: Prod
       Auth:
-        ApiKeyRequired: true
-        UsagePlan:
-          CreateUsagePlan: PER_API # Creates a single usage plan for the entire API
+        DefaultAuthorizer: MyBasicAuthorizer
+        Authorizers:
+          MyBasicAuthorizer:
+            FunctionArn: !GetAtt BasicAuthorizerFunction.Arn
+            FunctionPayloadType: TOKEN # For header-based authorizers
+            Identity:
+              Headers:
+                - authorization # The header to pass to the authorizer
+              ReauthorizeEvery: 0 # basic authentication don't work without it. 
+              # (stackoverflow.com/questions/66223516/aws-user-is-not-authorized-to-access-this-resource)
 
   # DynamoDB Tables
   AgeGroupsTable:
@@ -58,7 +82,6 @@ Resources:
 
   # --- Lambda Functions ---
 
-  # Age Group Functions
   CreateAgeGroupFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -69,13 +92,11 @@ Resources:
             TableName: !Ref AgeGroupsTable
       Events:
         ApiEvent:
-          Type: Api # FIX: Changed from HttpApi
+          Type: Api
           Properties:
             Path: /age-groups
-            Method: post # FIX: Changed to lowercase for convention, POST is also valid
-            RestApiId: !Ref EnrollmentsApi # FIX: Changed from ApiId
-            Auth:
-              ApiKeyRequired: true # This is now valid
+            Method: post
+            RestApiId: !Ref EnrollmentsApi
 
   ListAgeGroupsFunction:
     Type: AWS::Serverless::Function
@@ -87,13 +108,11 @@ Resources:
             TableName: !Ref AgeGroupsTable
       Events:
         ApiEvent:
-          Type: Api # FIX: Changed from HttpApi
+          Type: Api
           Properties:
             Path: /age-groups
-            Method: get # FIX: Changed to lowercase for convention, GET is also valid
-            RestApiId: !Ref EnrollmentsApi # FIX: Changed from ApiId
-            Auth:
-              ApiKeyRequired: true
+            Method: get
+            RestApiId: !Ref EnrollmentsApi
 
   DeleteAgeGroupFunction:
     Type: AWS::Serverless::Function
@@ -105,15 +124,12 @@ Resources:
             TableName: !Ref AgeGroupsTable
       Events:
         ApiEvent:
-          Type: Api # FIX: Changed from HttpApi
+          Type: Api
           Properties:
             Path: /age-groups/{id}
-            Method: delete # FIX: Changed to lowercase for convention, DELETE is also valid
-            RestApiId: !Ref EnrollmentsApi # FIX: Changed from ApiId
-            Auth:
-              ApiKeyRequired: true
+            Method: delete
+            RestApiId: !Ref EnrollmentsApi
 
-  # Enrollment Functions
   RequestEnrollmentFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -128,13 +144,11 @@ Resources:
             QueueName: !GetAtt EnrollmentQueue.QueueName
       Events:
         ApiEvent:
-          Type: Api # FIX: Changed from HttpApi
+          Type: Api
           Properties:
             Path: /enrollments
-            Method: post # FIX: Changed to lowercase for convention, POST is also valid
-            RestApiId: !Ref EnrollmentsApi # FIX: Changed from ApiId
-            Auth:
-              ApiKeyRequired: true
+            Method: post
+            RestApiId: !Ref EnrollmentsApi
 
   GetEnrollmentFunction:
     Type: AWS::Serverless::Function
@@ -146,15 +160,12 @@ Resources:
             TableName: !Ref EnrollmentsTable
       Events:
         ApiEvent:
-          Type: Api # FIX: Changed from HttpApi
+          Type: Api
           Properties:
             Path: /enrollments/{id}
-            Method: get # FIX: Changed to lowercase for convention, GET is also valid
-            RestApiId: !Ref EnrollmentsApi # FIX: Changed from ApiId
-            Auth:
-              ApiKeyRequired: true
+            Method: get
+            RestApiId: !Ref EnrollmentsApi
 
-  # Processor Function
   ProcessEnrollmentFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -173,11 +184,4 @@ Resources:
 Outputs:
   ApiEndpoint:
     Description: "API Gateway endpoint URL"
-    # FIX: Updated the URL format for a REST API to include the stage name
     Value: !Sub "https://${EnrollmentsApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
-  ApiKey:
-    Description: "API Key for the Enrollment System API"
-    # This reference is now valid because we are using AWS::Serverless::Api
-    # with ApiKeyRequired set to true. SAM implicitly creates a key with the
-    # logical ID {ApiLogicalId}ApiKey.
-    Value: !Ref EnrollmentsApiApiKey
