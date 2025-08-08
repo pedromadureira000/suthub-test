@@ -84,3 +84,5 @@ samconfig.toml # Often contains sensitive info like S3 buckets/stack names
 # Docker
 docker/dynamodb/
 
+# The event file for local test
+event.json
